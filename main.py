@@ -1,5 +1,7 @@
 import discord
 import os
+from keep_alive import keep_alive
+
 
 client = discord.Client()
 
@@ -17,4 +19,5 @@ async def on_message(message):
 
 
 
+keep_alive()
 client.run(os.environ['TOKEN'])
