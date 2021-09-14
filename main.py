@@ -1,11 +1,11 @@
 #imports
 import discord
 from discord.ext import commands, tasks
-import os
 from keep_alive import keep_alive
+import os
 import datetime
 from replit import db
-
+import replit
 
 
 #intents to let on_member_join/on_member_remove work
@@ -18,6 +18,7 @@ client = commands.Bot(command_prefix = {'Arcadius ','arcadius ','arc ','Arc ','a
 #redy message
 @client.event
 async def on_ready():
+  replit.clear()
   print("i am redy as {0.user}".format(client))
 
 
@@ -65,13 +66,12 @@ async def hello(ctx):
   await ctx.channel.send('Hello!')
 
 
-
-
 #music pleya
 from discord.voice_client import VoiceClient
 import youtube_dl
 
 from random import choice
+import time
 
 youtube_dl.utils.bug_reports_message = lambda: ''
 
@@ -106,44 +106,75 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
-        loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
 
         if 'entries' in data:
             # take first item from a playlist
             data = data['entries'][0]
 
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        #print("Playing "+data['title'])
 
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        if os.path.exists("Muzica.webm"):
+          os.remove("Muzica.webm")
+        os.rename(filename,"Muzica.webm")
+
+        return cls(discord.FFmpegPCMAudio("Muzica.webm", **ffmpeg_options), data=data)
+
+
+
+def is_connected(ctx):
+    voice_client = discord.utils.get(ctx.bot.voice_clients, guild=ctx.guild)
+    return voice_client and voice_client.is_connected()
+
+
+import queue
+q = queue.Queue()
 
 @client.command(name='play', help='This command plays music')
 async def play(ctx,*, url):
-    if not ctx.message.author.voice:
-        await ctx.send("You are not connected to a voice channel")
-        return
 
-    else:
-        channel = ctx.message.author.voice.channel
+  if not ctx.message.author.voice:
+    await ctx.send("You are not connected to a voice channel")
+    return
 
+  else:
+    channel = ctx.message.author.voice.channel
+
+  if not is_connected(ctx):
     await channel.connect()
 
-    server = ctx.message.guild
-    voice_channel = server.voice_client
+  await play_song(ctx,url)
 
-    async with ctx.typing():
-        player = await YTDLSource.from_url(url, loop=client.loop)
-        voice_channel.play(player, after=lambda e: print('Player error: %s' % e) if e else None)
+async def play_song(ctx,url,):
+  server = ctx.message.guild
+  voice_channel = server.voice_client
 
-    await ctx.send('**Now playing:** {}'.format(player.title))
+  async with ctx.typing():
+    player = await YTDLSource.from_url(url, loop=client.loop)
+
+
+  voice_channel.play(player, after=lambda error: client.loop.create_task(check_queue(ctx)))
+
+  await ctx.send('**Now playing:** {}'.format(player.title))
+
+async def check_queue(ctx):
+  if q.empty()!=1:
+    url=q.get()
+    await play_song(ctx, url)
+
+@client.command(name='queue', help='This command queues up next song')
+async def queue(ctx,*, url):
+  q.put(url)
+
 
 @client.command(name='stop', help='This command stops the music and makes the bot leave the voice channel')
 async def stop(ctx):
-    voice_client = ctx.message.guild.voice_client
-    await voice_client.disconnect()
-
-
-
+  while(q.empty()!=1):
+    q.get()
+  os.remove("Muzica.webm")
+  voice_client = ctx.message.guild.voice_client
+  await voice_client.disconnect()
 
 
 
